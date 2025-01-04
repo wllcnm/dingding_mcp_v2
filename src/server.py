@@ -104,7 +104,7 @@ class DingdingMCPServer:
 
     async def get_calendar_list(self, access_token: str, userid: str, start_time: int = None, end_time: int = None, max_results: int = 50):
         """获取用户日程列表"""
-        url = "https://api.dingtalk.com/v1.0/calendar/users/" + userid + "/calendars/primary/events/list"
+        url = f"https://api.dingtalk.com/v1.0/calendar/users/{userid}/calendars/primary/events"
         
         # 如果没有指定时间范围，默认查询从现在开始7天内的日程
         if not start_time:
@@ -112,18 +112,18 @@ class DingdingMCPServer:
         if not end_time:
             end_time = int((time.time() + 7 * 24 * 3600) * 1000)  # 默认7天
         
-        headers = {
-            "x-acs-dingtalk-access-token": access_token,
-            "Content-Type": "application/json"
-        }
-        
-        data = {
+        params = {
             "maxResults": max_results,
             "timeMin": start_time,
             "timeMax": end_time
         }
         
-        async with self.session.post(url, headers=headers, json=data) as response:
+        headers = {
+            "x-acs-dingtalk-access-token": access_token,
+            "Content-Type": "application/json"
+        }
+        
+        async with self.session.get(url, params=params, headers=headers) as response:
             result = await response.json()
             if "items" in result:
                 return result
