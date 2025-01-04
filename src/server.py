@@ -28,6 +28,8 @@ class DingdingMCPServer:
         self.setup_tools()
         self.access_token = None
         self.token_expires = 0
+        self.v2_access_token = None
+        self.v2_token_expires = 0
         self.session = None
 
     async def ensure_session(self):
@@ -35,6 +37,7 @@ class DingdingMCPServer:
             self.session = aiohttp.ClientSession()
 
     async def get_access_token(self):
+        """获取旧版 API 的 access_token"""
         if self.access_token and time.time() < self.token_expires:
             return self.access_token
 
@@ -59,6 +62,33 @@ class DingdingMCPServer:
                 return self.access_token
             else:
                 raise Exception(f"Failed to get access token: {data}")
+
+    async def get_v2_access_token(self):
+        """获取新版 API 的 access_token"""
+        if self.v2_access_token and time.time() < self.v2_token_expires:
+            return self.v2_access_token
+
+        await self.ensure_session()
+        app_key = os.environ.get("DINGTALK_APP_KEY")
+        app_secret = os.environ.get("DINGTALK_APP_SECRET")
+
+        if not all([app_key, app_secret]):
+            raise ValueError("Missing DingTalk API credentials in environment variables")
+
+        url = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
+        data = {
+            "appKey": app_key,
+            "appSecret": app_secret
+        }
+
+        async with self.session.post(url, json=data) as response:
+            result = await response.json()
+            if "accessToken" in result:
+                self.v2_access_token = result["accessToken"]
+                self.v2_token_expires = time.time() + result.get("expireIn", 7200) - 200  # 提前200秒更新
+                return self.v2_access_token
+            else:
+                raise Exception(f"Failed to get v2 access token: {result}")
 
     async def get_department_list(self, access_token: str):
         """获取部门列表"""
@@ -283,7 +313,8 @@ class DingdingMCPServer:
             
             elif name == "get_calendar_list":
                 try:
-                    access_token = await self.get_access_token()
+                    # 使用新版 API 的 access_token
+                    access_token = await self.get_v2_access_token()
                     userid = arguments["userid"]
                     start_time = arguments.get("start_time")
                     end_time = arguments.get("end_time")
