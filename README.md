@@ -11,9 +11,9 @@
 
 ## 环境要求
 
-- Python 3.9+
+- Python 3.10+
 - MCP 0.1.0+
-- DingTalk SDK 2.0.0+
+- DingTalk Stream SDK 0.14.0+
 
 ## 环境变量配置
 
