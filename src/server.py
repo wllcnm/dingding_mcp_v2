@@ -196,9 +196,11 @@ class DingdingMCPServer:
             "Content-Type": "application/json"
         }
         
+        logger.debug(f"Requesting calendar list with params: {params}")
         async with self.session.get(url, params=params, headers=headers) as response:
             result = await response.json()
-            if "items" in result:
+            logger.debug(f"Calendar list response: {result}")
+            if "events" in result:
                 return result
             else:
                 raise Exception(f"Failed to get calendar list: {result}")
@@ -349,12 +351,12 @@ class DingdingMCPServer:
                     )
                     
                     formatted_events = []
-                    for event in calendar_list.get("items", []):
+                    for event in calendar_list.get("events", []):
                         formatted_event = {
                             "summary": event.get("summary", "无标题"),
                             "start_time": event.get("start", {}).get("dateTime"),
                             "end_time": event.get("end", {}).get("dateTime"),
-                            "location": event.get("location", {}).get("meetingRooms", ["无地点"])[0],
+                            "location": event.get("location", {}).get("meetingRooms", ["无地点"])[0] if event.get("location", {}).get("meetingRooms") else "无地点",
                             "organizer": event.get("organizer", {}).get("displayName", "未知"),
                             "description": event.get("description", "无描述"),
                             "status": event.get("status", "未知"),
@@ -364,7 +366,8 @@ class DingdingMCPServer:
                                     "response": attendee.get("responseStatus", "未知")
                                 }
                                 for attendee in event.get("attendees", [])
-                            ]
+                            ],
+                            "online_meeting": event.get("onlineMeetingInfo", {}).get("extraInfo", {}).get("extraUrl", "无会议链接")
                         }
                         formatted_events.append(formatted_event)
                     

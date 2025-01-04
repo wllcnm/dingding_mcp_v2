@@ -30,14 +30,10 @@
 {
   "mcpServers": {
     "dingding": {
-      "command": "docker",
+      "command": "sh",
       "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e", "DINGTALK_APP_KEY=你的AppKey",
-        "-e", "DINGTALK_APP_SECRET=你的AppSecret",
-        "ghcr.io/wllcnm/mcp-dingding-v2:latest"
+        "-c",
+        "docker ps -a | grep mcp-dingding-v2 | awk '{print $1}' | xargs -r docker rm -f > /dev/null 2>&1; docker pull ghcr.io/wllcnm/mcp-dingding-v2:latest > /dev/null 2>&1; docker run -i --rm --name mcp-dingding-v2 -e DINGTALK_APP_KEY=你的AppKey -e DINGTALK_APP_SECRET=你的AppSecret ghcr.io/wllcnm/mcp-dingding-v2:latest"
       ]
     }
   }
@@ -45,6 +41,18 @@
 ```
 
 2. 重启 Claude 客户端
+
+注意：上面的启动命令会：
+1. 查找并删除所有旧的 mcp-dingding-v2 容器
+2. 从 GitHub 拉取最新的镜像
+3. 使用 `--name` 参数给容器指定固定名称
+4. 使用 `--rm` 参数在容器停止时自动删除
+
+命令说明：
+- `docker ps -a | grep mcp-dingding-v2 | awk '{print $1}' | xargs -r docker rm -f`: 删除所有旧容器
+- `docker pull ghcr.io/wllcnm/mcp-dingding-v2:latest`: 拉取最新镜像
+- `docker run -i --rm --name mcp-dingding-v2 ...`: 运行新容器
+- `> /dev/null 2>&1`: 隐藏不必要的输出信息
 
 ## 本地开发
 
@@ -63,8 +71,15 @@ python src/server.py
 
 使用 Docker 运行：
 ```bash
+# 清理旧容器
+docker ps -a | grep mcp-dingding-v2 | awk '{print $1}' | xargs -r docker rm -f
+
+# 构建并运行新容器
 docker build -t dingding-mcp-v2 .
-docker run -e DINGTALK_APP_KEY=your_app_key -e DINGTALK_APP_SECRET=your_app_secret dingding-mcp-v2
+docker run -i --rm --name mcp-dingding-v2 \
+  -e DINGTALK_APP_KEY=your_app_key \
+  -e DINGTALK_APP_SECRET=your_app_secret \
+  dingding-mcp-v2
 ```
 
 ## API 工具
