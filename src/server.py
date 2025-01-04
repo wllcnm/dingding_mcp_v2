@@ -29,16 +29,6 @@ class DingdingMCPServer:
         self.token_expires = 0
         self.session = None
 
-    def get_sign(self):
-        timestamp = str(round(time.time() * 1000))
-        secret = os.environ.get("DINGTALK_APP_SECRET")
-        secret_enc = secret.encode('utf-8')
-        string_to_sign = '{}\n{}'.format(timestamp, secret)
-        string_to_sign_enc = string_to_sign.encode('utf-8')
-        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
-        sign = quote_plus(base64.b64encode(hmac_code))
-        return timestamp, sign
-
     async def ensure_session(self):
         if self.session is None:
             self.session = aiohttp.ClientSession()
@@ -69,59 +59,110 @@ class DingdingMCPServer:
             else:
                 raise Exception(f"Failed to get access token: {data}")
 
+    async def get_department_list(self, access_token: str):
+        """获取部门列表"""
+        url = "https://oapi.dingtalk.com/department/list"
+        params = {"access_token": access_token}
+        
+        async with self.session.get(url, params=params) as response:
+            data = await response.json()
+            if data.get("errcode") == 0:
+                return data["department"]
+            else:
+                raise Exception(f"Failed to get department list: {data}")
+
+    async def get_department_users(self, access_token: str, department_id: int):
+        """获取部门用户基础信息"""
+        url = "https://oapi.dingtalk.com/user/simplelist"
+        params = {
+            "access_token": access_token,
+            "department_id": department_id
+        }
+        
+        async with self.session.get(url, params=params) as response:
+            data = await response.json()
+            if data.get("errcode") == 0:
+                return data["userlist"]
+            else:
+                raise Exception(f"Failed to get department users: {data}")
+
+    async def get_user_detail(self, access_token: str, userid: str):
+        """获取用户详细信息"""
+        url = "https://oapi.dingtalk.com/user/get"
+        params = {
+            "access_token": access_token,
+            "userid": userid
+        }
+        
+        async with self.session.get(url, params=params) as response:
+            data = await response.json()
+            if data.get("errcode") == 0:
+                return data
+            else:
+                raise Exception(f"Failed to get user detail: {data}")
+
     def setup_tools(self):
         @self.app.list_tools()
         async def list_tools() -> List[Tool]:
             return [
                 Tool(
-                    name="send_message",
-                    description="Send a message to a DingTalk conversation",
+                    name="get_access_token",
+                    description="获取钉钉 access_token，这是调用其他接口的必要凭证。每个 access_token 的有效期为 7200 秒，有效期内重复获取会返回相同结果，并自动续期。",
                     inputSchema={
                         "type": "object",
-                        "properties": {
-                            "conversation_id": {
-                                "type": "string",
-                                "description": "ID of the DingTalk conversation"
-                            },
-                            "message": {
-                                "type": "string",
-                                "description": "Message content to send"
-                            },
-                            "msg_type": {
-                                "type": "string",
-                                "description": "Message type (text/markdown/link/etc)",
-                                "default": "text"
-                            }
-                        },
-                        "required": ["conversation_id", "message"]
+                        "properties": {},
+                        "required": []
                     }
                 ),
                 Tool(
-                    name="get_conversation_info",
-                    description="Get information about a DingTalk conversation",
+                    name="find_user_by_name",
+                    description="根据用户姓名查询用户详细信息。这个工具会：1) 获取所有部门列表；2) 遍历每个部门查找指定姓名的用户；3) 找到后返回用户的详细信息。如果有多个同名用户，会返回找到的第一个用户信息。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "conversation_id": {
+                            "name": {
                                 "type": "string",
-                                "description": "ID of the DingTalk conversation"
+                                "description": "要查询的用户姓名"
                             }
                         },
-                        "required": ["conversation_id"]
+                        "required": ["name"]
                     }
                 ),
                 Tool(
-                    name="get_user_info",
-                    description="Get information about a DingTalk user",
+                    name="get_department_list",
+                    description="获取企业内部门列表。这是查询用户信息的第一步，通过它可以获取所有部门的 ID。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                ),
+                Tool(
+                    name="get_department_users",
+                    description="获取部门成员列表。这是查询用户信息的第二步，通过部门 ID 获取该部门下所有用户的基础信息。",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "user_id": {
-                                "type": "string",
-                                "description": "ID of the DingTalk user"
+                            "department_id": {
+                                "type": "integer",
+                                "description": "部门ID"
                             }
                         },
-                        "required": ["user_id"]
+                        "required": ["department_id"]
+                    }
+                ),
+                Tool(
+                    name="get_user_detail",
+                    description="获取用户详细信息。这是查询用户信息的最后一步，通过用户 ID 获取用户的所有详细信息。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "userid": {
+                                "type": "string",
+                                "description": "用户的 userid"
+                            }
+                        },
+                        "required": ["userid"]
                     }
                 )
             ]
@@ -129,81 +170,60 @@ class DingdingMCPServer:
         @self.app.call_tool()
         async def call_tool(name: str, arguments: dict) -> List[TextContent]:
             await self.ensure_session()
-            access_token = await self.get_access_token()
             
-            if name == "send_message":
-                conversation_id = arguments["conversation_id"]
-                message = arguments["message"]
-                msg_type = arguments.get("msg_type", "text")
-                
+            if name == "get_access_token":
                 try:
-                    url = "https://oapi.dingtalk.com/message/send_to_conversation"
-                    params = {"access_token": access_token}
+                    access_token = await self.get_access_token()
+                    return [TextContent(type="text", text=f"Access Token: {access_token}")]
+                except Exception as e:
+                    return [TextContent(type="text", text=f"Error getting access token: {str(e)}")]
+            
+            elif name == "find_user_by_name":
+                try:
+                    name = arguments["name"]
+                    access_token = await self.get_access_token()
                     
-                    if msg_type == "text":
-                        msg_content = {"content": message}
-                    elif msg_type == "markdown":
-                        msg_content = {
-                            "title": "消息",
-                            "text": message
-                        }
-                    else:
-                        return [TextContent(type="text", text=f"Unsupported message type: {msg_type}")]
-
-                    data = {
-                        "receiver": conversation_id,
-                        "msg": {
-                            "msgtype": msg_type,
-                            msg_type: msg_content
-                        }
-                    }
-
-                    async with self.session.post(url, params=params, json=data) as response:
-                        result = await response.json()
-                        if result.get("errcode") == 0:
-                            return [TextContent(type="text", text="Message sent successfully")]
-                        else:
-                            return [TextContent(type="text", text=f"Failed to send message: {result}")]
+                    # 1. 获取部门列表
+                    departments = await self.get_department_list(access_token)
+                    
+                    # 2. 遍历部门查找用户
+                    for dept in departments:
+                        users = await self.get_department_users(access_token, dept["id"])
+                        for user in users:
+                            if user["name"] == name:
+                                # 3. 获取用户详细信息
+                                user_detail = await self.get_user_detail(access_token, user["userid"])
+                                return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
+                    
+                    return [TextContent(type="text", text=f"User not found: {name}")]
                 except Exception as e:
-                    return [TextContent(type="text", text=f"Error sending message: {str(e)}")]
+                    return [TextContent(type="text", text=f"Error finding user: {str(e)}")]
             
-            elif name == "get_conversation_info":
-                conversation_id = arguments["conversation_id"]
-                
+            elif name == "get_department_list":
                 try:
-                    url = "https://oapi.dingtalk.com/chat/get"
-                    params = {
-                        "access_token": access_token,
-                        "chatid": conversation_id
-                    }
-
-                    async with self.session.get(url, params=params) as response:
-                        result = await response.json()
-                        if result.get("errcode") == 0:
-                            return [TextContent(type="text", text=f"Conversation info: {json.dumps(result, ensure_ascii=False)}")]
-                        else:
-                            return [TextContent(type="text", text=f"Failed to get conversation info: {result}")]
+                    access_token = await self.get_access_token()
+                    departments = await self.get_department_list(access_token)
+                    return [TextContent(type="text", text=f"Department list: {json.dumps(departments, ensure_ascii=False)}")]
                 except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting conversation info: {str(e)}")]
+                    return [TextContent(type="text", text=f"Error getting department list: {str(e)}")]
             
-            elif name == "get_user_info":
-                user_id = arguments["user_id"]
-                
+            elif name == "get_department_users":
                 try:
-                    url = "https://oapi.dingtalk.com/user/get"
-                    params = {
-                        "access_token": access_token,
-                        "userid": user_id
-                    }
-
-                    async with self.session.get(url, params=params) as response:
-                        result = await response.json()
-                        if result.get("errcode") == 0:
-                            return [TextContent(type="text", text=f"User info: {json.dumps(result, ensure_ascii=False)}")]
-                        else:
-                            return [TextContent(type="text", text=f"Failed to get user info: {result}")]
+                    access_token = await self.get_access_token()
+                    department_id = arguments["department_id"]
+                    users = await self.get_department_users(access_token, department_id)
+                    return [TextContent(type="text", text=f"Department users: {json.dumps(users, ensure_ascii=False)}")]
                 except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting user info: {str(e)}")]
+                    return [TextContent(type="text", text=f"Error getting department users: {str(e)}")]
+            
+            elif name == "get_user_detail":
+                try:
+                    access_token = await self.get_access_token()
+                    userid = arguments["userid"]
+                    user_detail = await self.get_user_detail(access_token, userid)
+                    return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
+                except Exception as e:
+                    return [TextContent(type="text", text=f"Error getting user detail: {str(e)}")]
             
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
