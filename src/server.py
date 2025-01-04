@@ -8,6 +8,7 @@ import hashlib
 import json
 from typing import List
 from urllib.parse import quote_plus
+from datetime import datetime, timedelta
 
 import aiohttp
 from mcp.server import Server
@@ -101,6 +102,34 @@ class DingdingMCPServer:
             else:
                 raise Exception(f"Failed to get user detail: {data}")
 
+    async def get_calendar_list(self, access_token: str, userid: str, start_time: int = None, end_time: int = None, max_results: int = 50):
+        """获取用户日程列表"""
+        url = "https://api.dingtalk.com/v1.0/calendar/users/" + userid + "/calendars/primary/events/list"
+        
+        # 如果没有指定时间范围，默认查询从现在开始7天内的日程
+        if not start_time:
+            start_time = int(time.time() * 1000)
+        if not end_time:
+            end_time = int((time.time() + 7 * 24 * 3600) * 1000)  # 默认7天
+        
+        headers = {
+            "x-acs-dingtalk-access-token": access_token,
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "maxResults": max_results,
+            "timeMin": start_time,
+            "timeMax": end_time
+        }
+        
+        async with self.session.post(url, headers=headers, json=data) as response:
+            result = await response.json()
+            if "items" in result:
+                return result
+            else:
+                raise Exception(f"Failed to get calendar list: {result}")
+
     def setup_tools(self):
         @self.app.list_tools()
         async def list_tools() -> List[Tool]:
@@ -160,6 +189,33 @@ class DingdingMCPServer:
                             "userid": {
                                 "type": "string",
                                 "description": "用户的 userid"
+                            }
+                        },
+                        "required": ["userid"]
+                    }
+                ),
+                Tool(
+                    name="get_calendar_list",
+                    description="查询用户的日程列表。可以指定时间范围和最大返回结果数。如果不指定时间范围，默认查询从现在开始7天内的日程。",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "userid": {
+                                "type": "string",
+                                "description": "要查询日程的用户ID"
+                            },
+                            "start_time": {
+                                "type": "integer",
+                                "description": "开始时间的时间戳（毫秒），可选"
+                            },
+                            "end_time": {
+                                "type": "integer",
+                                "description": "结束时间的时间戳（毫秒），可选"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "最大返回结果数，默认50",
+                                "default": 50
                             }
                         },
                         "required": ["userid"]
@@ -224,6 +280,39 @@ class DingdingMCPServer:
                     return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
                 except Exception as e:
                     return [TextContent(type="text", text=f"Error getting user detail: {str(e)}")]
+            
+            elif name == "get_calendar_list":
+                try:
+                    access_token = await self.get_access_token()
+                    userid = arguments["userid"]
+                    start_time = arguments.get("start_time")
+                    end_time = arguments.get("end_time")
+                    max_results = arguments.get("max_results", 50)
+                    
+                    calendar_list = await self.get_calendar_list(
+                        access_token,
+                        userid,
+                        start_time,
+                        end_time,
+                        max_results
+                    )
+                    
+                    # 格式化日程信息，使其更易读
+                    formatted_events = []
+                    for event in calendar_list.get("items", []):
+                        formatted_event = {
+                            "summary": event.get("summary", "无标题"),
+                            "start_time": event.get("start", {}).get("dateTime"),
+                            "end_time": event.get("end", {}).get("dateTime"),
+                            "location": event.get("location", "无地点"),
+                            "organizer": event.get("organizer", {}).get("displayName", "未知"),
+                            "description": event.get("description", "无描述")
+                        }
+                        formatted_events.append(formatted_event)
+                    
+                    return [TextContent(type="text", text=f"Calendar events: {json.dumps(formatted_events, ensure_ascii=False, indent=2)}")]
+                except Exception as e:
+                    return [TextContent(type="text", text=f"Error getting calendar list: {str(e)}")]
             
             else:
                 return [TextContent(type="text", text=f"Unknown tool: {name}")]
