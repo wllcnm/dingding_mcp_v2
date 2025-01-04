@@ -1,19 +1,20 @@
 # DingTalk MCP Server V2
 
-这是一个基于 MCP (Model Control Protocol) 的钉钉机器人服务器实现。它提供了与钉钉进行交互的各种功能，包括发送消息、获取会话信息和用户信息等。
+这是一个基于 MCP (Model Control Protocol) 的钉钉机器人服务器实现。它提供了与钉钉进行交互的各种功能，包括发送消息、获取会话信息、用户信息和日历事件等。
 
 ## 功能特性
 
 - 发送消息到钉钉会话
 - 获取钉钉会话信息
 - 获取钉钉用户信息
+- 查询用户日历事件
 - 支持多种消息类型（文本、Markdown、链接等）
 
 ## 环境要求
 
 - Python 3.10+
 - MCP 0.1.0+
-- AlibabaCloud DingTalk Stream SDK 1.1.3+
+- aiohttp 3.9.1+
 
 ## 环境变量配置
 
@@ -85,6 +86,27 @@ docker run -e DINGTALK_APP_KEY=your_app_key -e DINGTALK_APP_SECRET=your_app_secr
 - 参数：
   - user_id: 用户 ID
 
+### 4. get_calendar_list
+查询用户的日历事件列表
+- 参数：
+  - userid: 用户 ID（必填）
+  - start_time: 开始时间的时间戳（毫秒，可选）
+  - end_time: 结束时间的时间戳（毫秒，可选）
+  - max_results: 最大返回结果数（可选，默认 50）
+  - next_token: 分页 token（可选）
+- 返回：
+  - events: 日历事件列表
+    - summary: 事件标题
+    - start_time: 开始时间
+    - end_time: 结束时间
+    - location: 地点
+    - organizer: 组织者
+    - description: 描述
+    - status: 状态
+    - attendees: 参与者列表
+  - next_token: 下一页的 token
+  - total: 本次返回的事件数量
+
 ## 使用示例
 
 在 Claude 中，你可以这样使用工具：
@@ -100,16 +122,18 @@ docker run -e DINGTALK_APP_KEY=your_app_key -e DINGTALK_APP_SECRET=your_app_secr
 }
 ```
 
-示例对话：
-用户：发送一条消息到钉钉群。
-Claude：好的，我来帮你发送消息：
+查询日历示例：
+```json
 {
-  "tool": "send_message",
+  "tool": "get_calendar_list",
   "arguments": {
-    "conversation_id": "你的群ID",
-    "message": "这是一条测试消息"
+    "userid": "用户ID",
+    "start_time": 1704067200000,  // 2024-01-01 00:00:00
+    "end_time": 1704153600000,    // 2024-01-02 00:00:00
+    "max_results": 10
   }
 }
+```
 
 ## 注意事项
 

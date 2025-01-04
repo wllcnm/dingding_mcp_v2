@@ -132,11 +132,35 @@ class DingdingMCPServer:
             else:
                 raise Exception(f"Failed to get user detail: {data}")
 
-    async def get_calendar_list(self, access_token: str, userid: str, start_time: int = None, end_time: int = None, max_results: int = 50):
-        """获取用户日程列表"""
-        url = f"https://api.dingtalk.com/v1.0/calendar/users/{userid}/calendars/primary/events"
+    async def get_user_unionid(self, access_token: str, userid: str):
+        """获取用户的 unionId"""
+        url = "https://oapi.dingtalk.com/topapi/v2/user/get"
+        params = {
+            "access_token": access_token
+        }
+        data = {
+            "userid": userid
+        }
+        headers = {
+            "Content-Type": "application/json"
+        }
         
-        # 如果没有指定时间范围，默认查询从现在开始7天内的日程
+        async with self.session.post(url, params=params, json=data, headers=headers) as response:
+            result = await response.json()
+            if result.get("errcode") == 0:
+                return result["result"]["unionid"]
+            else:
+                raise Exception(f"Failed to get user unionid: {result}")
+
+    async def get_calendar_list(self, access_token: str, userid: str, start_time: int = None, end_time: int = None, max_results: int = 50, next_token: str = None):
+        """获取用户日程列表"""
+        # 1. 先获取用户的 unionId
+        unionid = await self.get_user_unionid(access_token, userid)
+        
+        # 2. 构建日历 API URL
+        url = f"https://api.dingtalk.com/v1.0/calendar/users/{unionid}/calendars/primary/events"
+        
+        # 3. 如果没有指定时间范围，默认查询从现在开始7天内的日程
         if not start_time:
             start_time = int(time.time() * 1000)
         if not end_time:
@@ -144,9 +168,13 @@ class DingdingMCPServer:
         
         params = {
             "maxResults": max_results,
-            "timeMin": start_time,
-            "timeMax": end_time
+            "timeMin": datetime.fromtimestamp(start_time / 1000).strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+            "timeMax": datetime.fromtimestamp(end_time / 1000).strftime("%Y-%m-%dT%H:%M:%S+08:00")
         }
+        
+        # 4. 添加分页 token
+        if next_token:
+            params["nextToken"] = next_token
         
         headers = {
             "x-acs-dingtalk-access-token": access_token,
@@ -226,7 +254,7 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="get_calendar_list",
-                    description="查询用户的日程列表。可以指定时间范围和最大返回结果数。如果不指定时间范围，默认查询从现在开始7天内的日程。",
+                    description="查询用户的日程列表。可以指定时间范围、最大返回结果数和分页 token。如果不指定时间范围，默认查询从现在开始7天内的日程。",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -246,6 +274,10 @@ class DingdingMCPServer:
                                 "type": "integer",
                                 "description": "最大返回结果数，默认50",
                                 "default": 50
+                            },
+                            "next_token": {
+                                "type": "string",
+                                "description": "分页 token，用于获取下一页数据，可选"
                             }
                         },
                         "required": ["userid"]
@@ -319,13 +351,15 @@ class DingdingMCPServer:
                     start_time = arguments.get("start_time")
                     end_time = arguments.get("end_time")
                     max_results = arguments.get("max_results", 50)
+                    next_token = arguments.get("next_token")
                     
                     calendar_list = await self.get_calendar_list(
                         access_token,
                         userid,
                         start_time,
                         end_time,
-                        max_results
+                        max_results,
+                        next_token
                     )
                     
                     # 格式化日程信息，使其更易读
@@ -335,13 +369,27 @@ class DingdingMCPServer:
                             "summary": event.get("summary", "无标题"),
                             "start_time": event.get("start", {}).get("dateTime"),
                             "end_time": event.get("end", {}).get("dateTime"),
-                            "location": event.get("location", "无地点"),
+                            "location": event.get("location", {}).get("meetingRooms", ["无地点"])[0],
                             "organizer": event.get("organizer", {}).get("displayName", "未知"),
-                            "description": event.get("description", "无描述")
+                            "description": event.get("description", "无描述"),
+                            "status": event.get("status", "未知"),
+                            "attendees": [
+                                {
+                                    "name": attendee.get("displayName", "未知"),
+                                    "response": attendee.get("responseStatus", "未知")
+                                }
+                                for attendee in event.get("attendees", [])
+                            ]
                         }
                         formatted_events.append(formatted_event)
                     
-                    return [TextContent(type="text", text=f"Calendar events: {json.dumps(formatted_events, ensure_ascii=False, indent=2)}")]
+                    response = {
+                        "events": formatted_events,
+                        "next_token": calendar_list.get("nextToken"),
+                        "total": len(formatted_events)
+                    }
+                    
+                    return [TextContent(type="text", text=f"Calendar events: {json.dumps(response, ensure_ascii=False, indent=2)}")]
                 except Exception as e:
                     return [TextContent(type="text", text=f"Error getting calendar list: {str(e)}")]
             
