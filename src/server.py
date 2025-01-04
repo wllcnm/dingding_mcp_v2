@@ -331,6 +331,26 @@ class DingdingMCPServer:
                                 return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
                     
                     return [TextContent(type="text", text=f"User not found: {name}")]
+
+                elif name == "get_department_list":
+                    logger.debug("Getting department list")
+                    access_token = await self.get_access_token()
+                    departments = await self.get_department_list(access_token)
+                    return [TextContent(type="text", text=f"Department list: {json.dumps(departments, ensure_ascii=False, indent=2)}")]
+
+                elif name == "get_department_users":
+                    logger.debug(f"Getting users for department: {arguments['department_id']}")
+                    access_token = await self.get_access_token()
+                    department_id = arguments["department_id"]
+                    users = await self.get_department_users(access_token, department_id)
+                    return [TextContent(type="text", text=f"Department users: {json.dumps(users, ensure_ascii=False, indent=2)}")]
+
+                elif name == "get_user_detail":
+                    logger.debug(f"Getting user detail for: {arguments['userid']}")
+                    access_token = await self.get_access_token()
+                    userid = arguments["userid"]
+                    user_detail = await self.get_user_detail(access_token, userid)
+                    return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False, indent=2)}")]
                 
                 elif name == "get_calendar_list":
                     logger.debug(f"Getting calendar list for user: {arguments['userid']}")
