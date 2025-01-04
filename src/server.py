@@ -17,13 +17,14 @@ from mcp.server.stdio import stdio_server
 
 # 日志配置
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("dingding_mcp_server")
 
 class DingdingMCPServer:
     def __init__(self):
+        logger.info("Initializing DingTalk MCP server...")
         self.app = Server("dingding_mcp_server")
         self.setup_tools()
         self.access_token = None
@@ -31,14 +32,18 @@ class DingdingMCPServer:
         self.v2_access_token = None
         self.v2_token_expires = 0
         self.session = None
+        logger.info("Server initialized successfully")
 
     async def ensure_session(self):
         if self.session is None:
+            logger.debug("Creating new aiohttp session")
             self.session = aiohttp.ClientSession()
 
     async def get_access_token(self):
         """获取旧版 API 的 access_token"""
+        logger.debug("Getting access token...")
         if self.access_token and time.time() < self.token_expires:
+            logger.debug("Using cached access token")
             return self.access_token
 
         await self.ensure_session()
@@ -46,6 +51,7 @@ class DingdingMCPServer:
         app_secret = os.environ.get("DINGTALK_APP_SECRET")
 
         if not all([app_key, app_secret]):
+            logger.error("Missing DingTalk API credentials")
             raise ValueError("Missing DingTalk API credentials in environment variables")
 
         url = "https://oapi.dingtalk.com/gettoken"
@@ -53,19 +59,24 @@ class DingdingMCPServer:
             "appkey": app_key,
             "appsecret": app_secret
         }
+        logger.debug(f"Requesting access token from {url}")
 
         async with self.session.get(url, params=params) as response:
             data = await response.json()
+            logger.debug(f"Access token response: {data}")
             if data.get("errcode") == 0:
                 self.access_token = data["access_token"]
-                self.token_expires = time.time() + data["expires_in"] - 200  # 提前200秒更新
+                self.token_expires = time.time() + data["expires_in"] - 200
                 return self.access_token
             else:
+                logger.error(f"Failed to get access token: {data}")
                 raise Exception(f"Failed to get access token: {data}")
 
     async def get_v2_access_token(self):
         """获取新版 API 的 access_token"""
+        logger.debug("Getting v2 access token...")
         if self.v2_access_token and time.time() < self.v2_token_expires:
+            logger.debug("Using cached v2 access token")
             return self.v2_access_token
 
         await self.ensure_session()
@@ -73,6 +84,7 @@ class DingdingMCPServer:
         app_secret = os.environ.get("DINGTALK_APP_SECRET")
 
         if not all([app_key, app_secret]):
+            logger.error("Missing DingTalk API credentials")
             raise ValueError("Missing DingTalk API credentials in environment variables")
 
         url = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
@@ -80,14 +92,17 @@ class DingdingMCPServer:
             "appKey": app_key,
             "appSecret": app_secret
         }
+        logger.debug(f"Requesting v2 access token from {url}")
 
         async with self.session.post(url, json=data) as response:
             result = await response.json()
+            logger.debug(f"V2 access token response: {result}")
             if "accessToken" in result:
                 self.v2_access_token = result["accessToken"]
-                self.v2_token_expires = time.time() + result.get("expireIn", 7200) - 200  # 提前200秒更新
+                self.v2_token_expires = time.time() + result.get("expireIn", 7200) - 200
                 return self.v2_access_token
             else:
+                logger.error(f"Failed to get v2 access token: {result}")
                 raise Exception(f"Failed to get v2 access token: {result}")
 
     async def get_department_list(self, access_token: str):
@@ -189,9 +204,12 @@ class DingdingMCPServer:
                 raise Exception(f"Failed to get calendar list: {result}")
 
     def setup_tools(self):
+        logger.info("Setting up tools...")
+        
         @self.app.list_tools()
         async def list_tools() -> List[Tool]:
-            return [
+            logger.debug("Listing available tools")
+            tools = [
                 Tool(
                     name="get_access_token",
                     description="获取钉钉 access_token，这是调用其他接口的必要凭证。每个 access_token 的有效期为 7200 秒，有效期内重复获取会返回相同结果，并自动续期。",
@@ -284,68 +302,36 @@ class DingdingMCPServer:
                     }
                 )
             ]
+            logger.debug(f"Available tools: {[tool.name for tool in tools]}")
+            return tools
 
         @self.app.call_tool()
         async def call_tool(name: str, arguments: dict) -> List[TextContent]:
+            logger.info(f"Calling tool: {name} with arguments: {arguments}")
             await self.ensure_session()
             
-            if name == "get_access_token":
-                try:
+            try:
+                if name == "get_access_token":
                     access_token = await self.get_access_token()
                     return [TextContent(type="text", text=f"Access Token: {access_token}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting access token: {str(e)}")]
-            
-            elif name == "find_user_by_name":
-                try:
+                
+                elif name == "find_user_by_name":
+                    logger.debug(f"Finding user by name: {arguments['name']}")
                     name = arguments["name"]
                     access_token = await self.get_access_token()
                     
-                    # 1. 获取部门列表
                     departments = await self.get_department_list(access_token)
-                    
-                    # 2. 遍历部门查找用户
                     for dept in departments:
                         users = await self.get_department_users(access_token, dept["id"])
                         for user in users:
                             if user["name"] == name:
-                                # 3. 获取用户详细信息
                                 user_detail = await self.get_user_detail(access_token, user["userid"])
                                 return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
                     
                     return [TextContent(type="text", text=f"User not found: {name}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error finding user: {str(e)}")]
-            
-            elif name == "get_department_list":
-                try:
-                    access_token = await self.get_access_token()
-                    departments = await self.get_department_list(access_token)
-                    return [TextContent(type="text", text=f"Department list: {json.dumps(departments, ensure_ascii=False)}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting department list: {str(e)}")]
-            
-            elif name == "get_department_users":
-                try:
-                    access_token = await self.get_access_token()
-                    department_id = arguments["department_id"]
-                    users = await self.get_department_users(access_token, department_id)
-                    return [TextContent(type="text", text=f"Department users: {json.dumps(users, ensure_ascii=False)}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting department users: {str(e)}")]
-            
-            elif name == "get_user_detail":
-                try:
-                    access_token = await self.get_access_token()
-                    userid = arguments["userid"]
-                    user_detail = await self.get_user_detail(access_token, userid)
-                    return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting user detail: {str(e)}")]
-            
-            elif name == "get_calendar_list":
-                try:
-                    # 使用新版 API 的 access_token
+                
+                elif name == "get_calendar_list":
+                    logger.debug(f"Getting calendar list for user: {arguments['userid']}")
                     access_token = await self.get_v2_access_token()
                     userid = arguments["userid"]
                     start_time = arguments.get("start_time")
@@ -362,7 +348,6 @@ class DingdingMCPServer:
                         next_token
                     )
                     
-                    # 格式化日程信息，使其更易读
                     formatted_events = []
                     for event in calendar_list.get("items", []):
                         formatted_event = {
@@ -390,17 +375,21 @@ class DingdingMCPServer:
                     }
                     
                     return [TextContent(type="text", text=f"Calendar events: {json.dumps(response, ensure_ascii=False, indent=2)}")]
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error getting calendar list: {str(e)}")]
-            
-            else:
-                return [TextContent(type="text", text=f"Unknown tool: {name}")]
+                
+                else:
+                    logger.warning(f"Unknown tool: {name}")
+                    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+                    
+            except Exception as e:
+                logger.error(f"Error calling tool {name}: {str(e)}", exc_info=True)
+                return [TextContent(type="text", text=f"Error calling tool {name}: {str(e)}")]
 
     async def run(self):
         logger.info("Starting DingTalk MCP server...")
         
         async with stdio_server() as (read_stream, write_stream):
             try:
+                logger.debug("Initializing MCP server")
                 await self.app.run(
                     read_stream,
                     write_stream,
@@ -411,9 +400,11 @@ class DingdingMCPServer:
                 raise
             finally:
                 if self.session:
+                    logger.debug("Closing aiohttp session")
                     await self.session.close()
 
 def main():
+    logger.info("Starting main function")
     server = DingdingMCPServer()
     asyncio.run(server.run())
 
