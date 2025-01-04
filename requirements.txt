@@ -1,2 +1,2 @@
 mcp>=0.1.0
-dingtalk-sdk>=2.0.0 
+dingtalk-stream>=0.14.0 

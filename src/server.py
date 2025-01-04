@@ -5,7 +5,8 @@ from typing import List
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 from mcp.server.stdio import stdio_server
-from dingtalk import DingTalk
+from dingtalk_stream import ChatbotMessage
+from dingtalk_stream.client import Client
 
 # 日志配置
 logging.basicConfig(
@@ -27,7 +28,7 @@ class DingdingMCPServer:
         if not all([app_key, app_secret]):
             raise ValueError("Missing DingTalk API credentials in environment variables")
         
-        return DingTalk(app_key, app_secret)
+        return Client(app_key=app_key, app_secret=app_secret)
 
     def setup_tools(self):
         @self.app.list_tools()
@@ -88,7 +89,7 @@ class DingdingMCPServer:
 
         @self.app.call_tool()
         async def call_tool(name: str, arguments: dict) -> List[TextContent]:
-            dingtalk = self.get_dingtalk_client()
+            client = self.get_dingtalk_client()
             
             if name == "send_message":
                 conversation_id = arguments["conversation_id"]
@@ -96,11 +97,14 @@ class DingdingMCPServer:
                 msg_type = arguments.get("msg_type", "text")
                 
                 try:
-                    response = dingtalk.send_message(
-                        conversation_id=conversation_id,
-                        msg_type=msg_type,
-                        content={"content": message} if msg_type == "text" else message
-                    )
+                    msg = ChatbotMessage(conversation_id=conversation_id)
+                    if msg_type == "text":
+                        response = await msg.send_text(text=message)
+                    elif msg_type == "markdown":
+                        response = await msg.send_markdown(title="消息", text=message)
+                    else:
+                        return [TextContent(type="text", text=f"Unsupported message type: {msg_type}")]
+                    
                     return [TextContent(type="text", text=f"Message sent successfully: {response}")]
                 except Exception as e:
                     return [TextContent(type="text", text=f"Error sending message: {str(e)}")]
@@ -109,7 +113,8 @@ class DingdingMCPServer:
                 conversation_id = arguments["conversation_id"]
                 
                 try:
-                    info = dingtalk.get_chat_info(conversation_id)
+                    msg = ChatbotMessage(conversation_id=conversation_id)
+                    info = await msg.get_conversation_info()
                     return [TextContent(type="text", text=f"Conversation info: {info}")]
                 except Exception as e:
                     return [TextContent(type="text", text=f"Error getting conversation info: {str(e)}")]
@@ -118,8 +123,8 @@ class DingdingMCPServer:
                 user_id = arguments["user_id"]
                 
                 try:
-                    info = dingtalk.get_user_info(user_id)
-                    return [TextContent(type="text", text=f"User info: {info}")]
+                    response = await client.get_user_info(user_id)
+                    return [TextContent(type="text", text=f"User info: {response}")]
                 except Exception as e:
                     return [TextContent(type="text", text=f"Error getting user info: {str(e)}")]
             
