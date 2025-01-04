@@ -36,7 +36,7 @@
         "--rm",
         "-e", "DINGTALK_APP_KEY=你的AppKey",
         "-e", "DINGTALK_APP_SECRET=你的AppSecret",
-        "ghcr.io/wllcnm/mcp-dingding:latest"
+        "ghcr.io/wllcnm/mcp-dingding-v2:latest"
       ]
     }
   }
