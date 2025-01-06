@@ -226,8 +226,8 @@ class DingdingMCPServer:
                 Tool(
                     name="find_user_by_name",
                     description="根据用户姓名查询用户的详细信息。当你只知道用户的姓名，需要获取该用户的其他信息（如 userid、手机号、邮箱等）时使用此工具。"
-                              "此工具会执行以下步骤：1) 获取所有部门列表；2) 遍历每个部门查找指定姓名的用户；3) 找到后返回用户的详细信息。"
-                              "如果公司内有多个同名用户，会返回找到的第一个用户信息。"
+                              "此工具会执行以下步骤：1) 获取所有部门列表；2) 遍历每个部门查找指定姓名的用户；3) 返回所有匹配用户的详细信息。"
+                              "如果公司内有多个同名用户，会返回所有匹配用户的信息。"
                               "适用场景：根据用户姓名查找其 userid、获取用户联系方式、验证用户身份等。",
                     inputSchema={
                         "type": "object",
@@ -340,15 +340,24 @@ class DingdingMCPServer:
                     name = arguments["name"]
                     access_token = await self.get_access_token()
                     
+                    found_users = []
                     departments = await self.get_department_list(access_token)
+                    
                     for dept in departments:
                         users = await self.get_department_users(access_token, dept["id"])
                         for user in users:
                             if user["name"] == name:
                                 user_detail = await self.get_user_detail(access_token, user["userid"])
-                                return [TextContent(type="text", text=f"User detail: {json.dumps(user_detail, ensure_ascii=False)}")]
+                                found_users.append(user_detail)
                     
-                    return [TextContent(type="text", text=f"User not found: {name}")]
+                    if found_users:
+                        response = {
+                            "total": len(found_users),
+                            "users": found_users
+                        }
+                        return [TextContent(type="text", text=f"Found users: {json.dumps(response, ensure_ascii=False, indent=2)}")]
+                    else:
+                        return [TextContent(type="text", text=f"User not found: {name}")]
 
                 elif name == "get_department_list":
                     logger.debug("Getting department list")
