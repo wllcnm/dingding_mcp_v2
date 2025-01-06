@@ -214,7 +214,9 @@ class DingdingMCPServer:
             tools = [
                 Tool(
                     name="get_access_token",
-                    description="获取钉钉 access_token，这是调用其他接口的必要凭证。每个 access_token 的有效期为 7200 秒，有效期内重复获取会返回相同结果，并自动续期。",
+                    description="获取钉钉 access_token。当你需要测试 API 连接状态，或者需要手动获取 access_token 时使用此工具。"
+                              "注意：通常不需要手动调用此工具，因为其他工具会自动获取和管理 token。"
+                              "每个 access_token 的有效期为 7200 秒，有效期内重复获取会返回相同结果，并自动续期。",
                     inputSchema={
                         "type": "object",
                         "properties": {},
@@ -223,13 +225,16 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="find_user_by_name",
-                    description="根据用户姓名查询用户详细信息。这个工具会：1) 获取所有部门列表；2) 遍历每个部门查找指定姓名的用户；3) 找到后返回用户的详细信息。如果有多个同名用户，会返回找到的第一个用户信息。",
+                    description="根据用户姓名查询用户的详细信息。当你只知道用户的姓名，需要获取该用户的其他信息（如 userid、手机号、邮箱等）时使用此工具。"
+                              "此工具会执行以下步骤：1) 获取所有部门列表；2) 遍历每个部门查找指定姓名的用户；3) 找到后返回用户的详细信息。"
+                              "如果公司内有多个同名用户，会返回找到的第一个用户信息。"
+                              "适用场景：根据用户姓名查找其 userid、获取用户联系方式、验证用户身份等。",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "description": "要查询的用户姓名"
+                                "description": "要查询的用户姓名，例如：张三"
                             }
                         },
                         "required": ["name"]
@@ -237,7 +242,10 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="get_department_list",
-                    description="获取企业内部门列表。这是查询用户信息的第一步，通过它可以获取所有部门的 ID。",
+                    description="获取企业内所有部门的列表信息。当你需要了解公司的组织架构，或者需要获取某个部门的 ID 时使用此工具。"
+                              "返回的信息包括：部门ID、部门名称、父部门ID等。"
+                              "这通常是查询用户信息的第一步，因为很多其他 API 都需要部门 ID。"
+                              "适用场景：获取组织架构、查找部门ID、统计部门数量等。",
                     inputSchema={
                         "type": "object",
                         "properties": {},
@@ -246,13 +254,16 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="get_department_users",
-                    description="获取部门成员列表。这是查询用户信息的第二步，通过部门 ID 获取该部门下所有用户的基础信息。",
+                    description="获取指定部门下的所有成员列表。当你需要了解某个部门有哪些成员，或者需要批量获取部门成员信息时使用此工具。"
+                              "返回的是成员的基础信息，包括：userid、名字、职位等。"
+                              "如果需要某个用户的详细信息，需要再调用 get_user_detail 工具。"
+                              "适用场景：统计部门人数、获取部门成员列表、查找部门内特定职位的人员等。",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "department_id": {
                                 "type": "integer",
-                                "description": "部门ID"
+                                "description": "部门的ID，可以通过 get_department_list 工具获取"
                             }
                         },
                         "required": ["department_id"]
@@ -260,13 +271,16 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="get_user_detail",
-                    description="获取用户详细信息。这是查询用户信息的最后一步，通过用户 ID 获取用户的所有详细信息。",
+                    description="获取指定用户的详细信息。当你已经知道用户的 userid，需要获取该用户的详细信息时使用此工具。"
+                              "返回的详细信息包括：姓名、手机号、邮箱、所在部门、职位、工号、是否管理员等。"
+                              "这是获取用户最完整信息的方法，通常在确认用户身份、获取用户联系方式时使用。"
+                              "适用场景：获取用户联系方式、验证用户身份、查询用户所在部门和职位等。",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "userid": {
                                 "type": "string",
-                                "description": "用户的 userid"
+                                "description": "用户的 userid，例如：202407101414"
                             }
                         },
                         "required": ["userid"]
@@ -274,30 +288,34 @@ class DingdingMCPServer:
                 ),
                 Tool(
                     name="get_calendar_list",
-                    description="查询用户的日程列表。可以指定时间范围、最大返回结果数和分页 token。如果不指定时间范围，默认查询从现在开始7天内的日程。",
+                    description="查询指定用户的日程列表。当你需要查看用户的日程安排，或者需要了解会议室预订情况时使用此工具。"
+                              "支持的功能：1) 按时间范围筛选日程；2) 分页获取日程列表；3) 获取会议详情。"
+                              "返回的信息包括：日程标题、开始时间、结束时间、地点、组织者、参与者、会议链接等。"
+                              "如果不指定时间范围，默认查询从当前时间开始7天内的日程。"
+                              "适用场景：查询用户日程安排、获取会议室预订情况、统计会议时长、导出日程表等。",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "userid": {
                                 "type": "string",
-                                "description": "要查询日程的用户ID"
+                                "description": "要查询日程的用户ID，例如：202407101414"
                             },
                             "start_time": {
                                 "type": "integer",
-                                "description": "开始时间的时间戳（毫秒），可选"
+                                "description": "开始时间的时间戳（毫秒），例如：1704067200000 表示 2024-01-01 00:00:00"
                             },
                             "end_time": {
                                 "type": "integer",
-                                "description": "结束时间的时间戳（毫秒），可选"
+                                "description": "结束时间的时间戳（毫秒），例如：1704153600000 表示 2024-01-02 00:00:00"
                             },
                             "max_results": {
                                 "type": "integer",
-                                "description": "最大返回结果数，默认50",
+                                "description": "单次返回的最大日程数量，默认为 50，建议不要设置太大以免影响性能",
                                 "default": 50
                             },
                             "next_token": {
                                 "type": "string",
-                                "description": "分页 token，用于获取下一页数据，可选"
+                                "description": "分页标记，从上一次查询结果中获取，用于获取下一页数据"
                             }
                         },
                         "required": ["userid"]
