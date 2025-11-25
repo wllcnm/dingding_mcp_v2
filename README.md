@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/wllcnm-dingding-mcp-v2-badge.png)](https://mseep.ai/app/wllcnm-dingding-mcp-v2)
+
 # DingTalk MCP Server V2
 
 这是一个基于 MCP (Model Control Protocol) 的钉钉机器人服务器实现。它提供了与钉钉进行交互的各种功能，包括发送消息、获取会话信息、用户信息和日历事件等。
